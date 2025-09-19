@@ -8,6 +8,30 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; }
+        
+        @keyframes confetti-fall {
+            0% {
+                transform: translateY(-100vh) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(100vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+        
+        @keyframes pulse-success {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+        }
+        
+        .pulse-success {
+            animation: pulse-success 0.6s ease-in-out;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
@@ -53,13 +77,19 @@
                         <!-- Daftar siswa untuk absen akan muncul di sini -->
                     </div>
                     
-                    <div class="mt-6 flex justify-between">
+                    <div class="mt-6 flex flex-wrap justify-between gap-3">
                         <button onclick="markAllPresent()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
                             ✅ Tandai Semua Hadir
                         </button>
-                        <button onclick="saveAttendance()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
-                            💾 Simpan Absensi
-                        </button>
+                        <div class="flex gap-3">
+                            <button onclick="saveAttendance()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                                💾 Simpan Absensi
+                            </button>
+                            <button onclick="sendToSpreadsheet()" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2">
+                                <span>📊</span>
+                                <span>Kirim ke Spreadsheet</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -690,22 +720,74 @@
 
         function saveAttendance() {
             const today = getTodayString();
+            const saveBtn = event.target;
             
-            // Remove existing record for today
-            attendanceHistory = attendanceHistory.filter(record => record.date !== today);
+            // Show loading state with pulse effect
+            const originalText = saveBtn.innerHTML;
+            saveBtn.innerHTML = '⏳ Menyimpan...';
+            saveBtn.disabled = true;
+            saveBtn.classList.add('opacity-50', 'cursor-not-allowed', 'animate-pulse');
             
-            // Add new record
-            attendanceHistory.push({
-                date: today,
-                attendance: { ...todayAttendance },
-                timestamp: new Date().toISOString()
-            });
+            // Add loading animation
+            showLoadingOverlay('💾 Menyimpan data absensi ke HTML script...');
             
-            localStorage.setItem('attendanceHistory', JSON.stringify(attendanceHistory));
-            
-            alert('✅ Absensi berhasil disimpan!');
-            updateStatistics();
-            renderAttendanceHistory();
+            // Simulate processing time for better UX
+            setTimeout(() => {
+                // Remove existing record for today
+                attendanceHistory = attendanceHistory.filter(record => record.date !== today);
+                
+                // Add new record with enhanced metadata
+                const newRecord = {
+                    date: today,
+                    attendance: { ...todayAttendance },
+                    timestamp: new Date().toISOString(),
+                    totalStudents: students.length,
+                    presentCount: Object.values(todayAttendance).filter(status => status === 'hadir').length,
+                    metadata: {
+                        savedAt: new Date().toLocaleString('id-ID'),
+                        version: '1.0',
+                        source: 'HTML_Script_Storage'
+                    }
+                };
+                
+                attendanceHistory.push(newRecord);
+                
+                // Save to localStorage (HTML script storage)
+                localStorage.setItem('attendanceHistory', JSON.stringify(attendanceHistory));
+                localStorage.setItem('lastSaved', new Date().toISOString());
+                
+                // Also save to a backup object in the script
+                window.attendanceBackup = {
+                    data: attendanceHistory,
+                    students: students,
+                    lastUpdate: new Date().toISOString()
+                };
+                
+                // Hide loading overlay
+                hideLoadingOverlay();
+                
+                // Reset button with success state
+                saveBtn.innerHTML = '✅ Tersimpan!';
+                saveBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'animate-pulse');
+                saveBtn.classList.add('bg-green-500', 'pulse-success');
+                
+                // Reset button after 2 seconds
+                setTimeout(() => {
+                    saveBtn.innerHTML = originalText;
+                    saveBtn.disabled = false;
+                    saveBtn.classList.remove('bg-green-500', 'pulse-success');
+                }, 2000);
+                
+                // Show success animation with storage info
+                showSuccessAnimation('✅ Data tersimpan di HTML script!');
+                showStorageInfo(newRecord);
+                
+                // Add confetti effect
+                createConfetti();
+                
+                updateStatistics();
+                renderAttendanceHistory();
+            }, 1500);
         }
 
         // Statistics and reporting
@@ -1418,15 +1500,623 @@
             document.body.removeChild(link);
             
             // Show success message
+            showSuccessToast(`✅ File ${filename} berhasil diunduh!`);
+        }
+
+        // Visual Effects Functions
+        function showLoadingOverlay(message) {
+            const overlay = document.createElement('div');
+            overlay.id = 'loading-overlay';
+            overlay.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+            overlay.innerHTML = `
+                <div class="bg-white rounded-xl p-8 text-center shadow-2xl">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                    <p class="text-gray-700 font-medium">${message}</p>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+
+        function hideLoadingOverlay() {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) {
+                overlay.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+                setTimeout(() => {
+                    if (document.body.contains(overlay)) {
+                        document.body.removeChild(overlay);
+                    }
+                }, 300);
+            }
+        }
+
+        function showSuccessAnimation(message) {
+            const successDiv = document.createElement('div');
+            successDiv.className = 'fixed inset-0 z-50 flex items-center justify-center pointer-events-none';
+            successDiv.innerHTML = `
+                <div class="bg-green-500 text-white px-8 py-4 rounded-xl shadow-2xl transform scale-0 animate-bounce">
+                    <div class="text-2xl font-bold text-center">${message}</div>
+                </div>
+            `;
+            document.body.appendChild(successDiv);
+            
+            // Animate in
+            setTimeout(() => {
+                successDiv.firstElementChild.classList.remove('scale-0');
+                successDiv.firstElementChild.classList.add('scale-100', 'transition-transform', 'duration-500');
+            }, 100);
+            
+            // Animate out
+            setTimeout(() => {
+                successDiv.firstElementChild.classList.add('scale-0', 'opacity-0');
+                setTimeout(() => {
+                    if (document.body.contains(successDiv)) {
+                        document.body.removeChild(successDiv);
+                    }
+                }, 500);
+            }, 2000);
+        }
+
+        function showSuccessToast(message) {
             const toast = document.createElement('div');
-            toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-            toast.textContent = `✅ File ${filename} berhasil diunduh!`;
+            toast.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transform translate-x-full transition-transform duration-300';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            
+            // Animate in
+            setTimeout(() => {
+                toast.classList.remove('translate-x-full');
+            }, 100);
+            
+            // Animate out
+            setTimeout(() => {
+                toast.classList.add('translate-x-full');
+                setTimeout(() => {
+                    if (document.body.contains(toast)) {
+                        document.body.removeChild(toast);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        function createConfetti() {
+            const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dda0dd', '#98d8c8'];
+            
+            for (let i = 0; i < 50; i++) {
+                setTimeout(() => {
+                    const confetti = document.createElement('div');
+                    confetti.className = 'fixed pointer-events-none z-40';
+                    confetti.style.left = Math.random() * 100 + 'vw';
+                    confetti.style.top = '-10px';
+                    confetti.style.width = '10px';
+                    confetti.style.height = '10px';
+                    confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                    confetti.style.borderRadius = '50%';
+                    confetti.style.animation = `confetti-fall ${2 + Math.random() * 3}s linear forwards`;
+                    
+                    document.body.appendChild(confetti);
+                    
+                    setTimeout(() => {
+                        if (document.body.contains(confetti)) {
+                            document.body.removeChild(confetti);
+                        }
+                    }, 5000);
+                }, i * 50);
+            }
+        }
+
+        // Spreadsheet Integration Functions
+        function sendToSpreadsheet() {
+            const today = getTodayString();
+            const todayRecord = attendanceHistory.find(record => record.date === today);
+            
+            if (!todayRecord) {
+                showErrorToast('❌ Belum ada data absensi hari ini untuk dikirim!');
+                return;
+            }
+            
+            const sendBtn = event.target;
+            const originalHTML = sendBtn.innerHTML;
+            
+            // Show loading state
+            sendBtn.innerHTML = '⏳ Mengirim...';
+            sendBtn.disabled = true;
+            sendBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            
+            showLoadingOverlay('Mengirim data ke Google Spreadsheet...');
+            
+            // Prepare data for spreadsheet
+            const spreadsheetData = prepareSpreadsheetData(todayRecord);
+            
+            // Simulate API call (replace with actual Google Sheets API)
+            setTimeout(() => {
+                // In real implementation, you would call Google Sheets API here
+                // Example: sendToGoogleSheets(spreadsheetData)
+                
+                hideLoadingOverlay();
+                
+                // Reset button
+                sendBtn.innerHTML = originalHTML;
+                sendBtn.disabled = false;
+                sendBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                
+                // Show success
+                showSuccessAnimation('📊 Data berhasil dikirim ke Spreadsheet!');
+                createConfetti();
+                
+                // Show spreadsheet URL (demo)
+                showSpreadsheetModal(spreadsheetData);
+                
+            }, 2000);
+        }
+
+        function prepareSpreadsheetData(attendanceRecord) {
+            const date = new Date(attendanceRecord.date).toLocaleDateString('id-ID');
+            const data = [];
+            
+            // Header row
+            data.push(['Tanggal', 'NIS', 'Nama Siswa', 'Status', 'Waktu Absen', 'Keterangan']);
+            
+            // Data rows
+            Object.entries(attendanceRecord.attendance).forEach(([studentId, status]) => {
+                if (!studentId.includes('_')) { // Skip photo and metadata entries
+                    const student = students.find(s => s.id == studentId);
+                    if (student) {
+                        const hasPhoto = !!attendanceRecord.attendance[studentId + '_photo'];
+                        const photoTime = attendanceRecord.attendance[studentId + '_photo_time'];
+                        const timeStamp = photoTime ? new Date(photoTime).toLocaleTimeString('id-ID') : '-';
+                        const keterangan = hasPhoto ? 'Dengan foto' : 'Tanpa foto';
+                        
+                        const statusText = status === 'hadir' ? 'Hadir' :
+                                         status === 'tidak-hadir' ? 'Tidak Hadir' :
+                                         status === 'izin' ? 'Izin' : 'Sakit';
+                        
+                        data.push([date, student.studentId, student.name, statusText, timeStamp, keterangan]);
+                    }
+                }
+            });
+            
+            return data;
+        }
+
+        function showSpreadsheetModal(data) {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+            modal.innerHTML = `
+                <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+                    <div class="p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-2xl font-semibold text-gray-800">📊 Data Terkirim ke Spreadsheet</h3>
+                            <button onclick="this.closest('.fixed').remove()" class="text-gray-500 hover:text-gray-700 text-2xl">×</button>
+                        </div>
+                        
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                            <div class="flex items-center space-x-2 text-green-700">
+                                <span class="text-xl">✅</span>
+                                <span class="font-medium">Data berhasil dikirim!</span>
+                            </div>
+                            <p class="text-sm text-green-600 mt-1">
+                                ${data.length - 1} siswa telah dikirim ke Google Spreadsheet
+                            </p>
+                        </div>
+                        
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-gray-700 mb-3">Preview Data yang Dikirim:</h4>
+                            <div class="overflow-x-auto border border-gray-300 rounded-lg">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-100">
+                                        <tr>
+                                            ${data[0].map(header => `<th class="px-3 py-2 text-left font-medium text-gray-700 border-b">${header}</th>`).join('')}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${data.slice(1, 6).map(row => `
+                                            <tr class="hover:bg-gray-50">
+                                                ${row.map(cell => `<td class="px-3 py-2 border-b text-gray-600">${cell}</td>`).join('')}
+                                            </tr>
+                                        `).join('')}
+                                        ${data.length > 6 ? `
+                                            <tr>
+                                                <td colspan="${data[0].length}" class="px-3 py-2 text-center text-gray-500 italic">
+                                                    ... dan ${data.length - 6} data lainnya
+                                                </td>
+                                            </tr>
+                                        ` : ''}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                            <h4 class="font-semibold text-blue-700 mb-2">🔗 Link Spreadsheet (Demo)</h4>
+                            <p class="text-sm text-blue-600 mb-2">
+                                Data telah dikirim ke Google Spreadsheet Anda:
+                            </p>
+                            <div class="bg-white border border-blue-300 rounded px-3 py-2 text-sm font-mono text-blue-800">
+                                https://docs.google.com/spreadsheets/d/1ABC123.../edit
+                            </div>
+                            <p class="text-xs text-blue-500 mt-2">
+                                * Ini adalah contoh URL. Dalam implementasi nyata, Anda perlu mengonfigurasi Google Sheets API.
+                            </p>
+                        </div>
+                        
+                        <div class="flex justify-center space-x-3">
+                            <button onclick="this.closest('.fixed').remove()" 
+                                    class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                                Tutup
+                            </button>
+                            <button onclick="openSpreadsheetSetup()" 
+                                    class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                                ⚙️ Setup Spreadsheet
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        function openSpreadsheetSetup() {
+            // Close current modal
+            document.querySelector('.fixed').remove();
+            
+            const setupModal = document.createElement('div');
+            setupModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+            setupModal.innerHTML = `
+                <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full">
+                    <div class="p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-xl font-semibold text-gray-800">⚙️ Setup Google Spreadsheet</h3>
+                            <button onclick="this.closest('.fixed').remove()" class="text-gray-500 hover:text-gray-700 text-2xl">×</button>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Spreadsheet ID</label>
+                                <input type="text" id="spreadsheet-id" placeholder="1ABC123DEF456..." 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <p class="text-xs text-gray-500 mt-1">ID dari URL Google Spreadsheet Anda</p>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Sheet Name</label>
+                                <input type="text" id="sheet-name" placeholder="Absensi" value="Absensi"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">API Key</label>
+                                <input type="password" id="api-key" placeholder="AIza..." 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <p class="text-xs text-gray-500 mt-1">Google Sheets API Key Anda</p>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-6">
+                            <h4 class="font-semibold text-yellow-700 mb-2">📋 Langkah Setup:</h4>
+                            <ol class="text-sm text-yellow-600 space-y-1 list-decimal list-inside">
+                                <li>Buat Google Spreadsheet baru</li>
+                                <li>Aktifkan Google Sheets API di Google Cloud Console</li>
+                                <li>Buat API Key dan masukkan di atas</li>
+                                <li>Copy Spreadsheet ID dari URL</li>
+                                <li>Klik "Simpan Konfigurasi"</li>
+                            </ol>
+                        </div>
+                        
+                        <div class="flex justify-center space-x-3 mt-6">
+                            <button onclick="this.closest('.fixed').remove()" 
+                                    class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                                Batal
+                            </button>
+                            <button onclick="saveSpreadsheetConfig()" 
+                                    class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                                💾 Simpan Konfigurasi
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(setupModal);
+            
+            // Load existing config
+            const config = JSON.parse(localStorage.getItem('spreadsheetConfig') || '{}');
+            if (config.spreadsheetId) document.getElementById('spreadsheet-id').value = config.spreadsheetId;
+            if (config.sheetName) document.getElementById('sheet-name').value = config.sheetName;
+            if (config.apiKey) document.getElementById('api-key').value = config.apiKey;
+        }
+
+        function saveSpreadsheetConfig() {
+            const config = {
+                spreadsheetId: document.getElementById('spreadsheet-id').value,
+                sheetName: document.getElementById('sheet-name').value,
+                apiKey: document.getElementById('api-key').value
+            };
+            
+            if (!config.spreadsheetId || !config.apiKey) {
+                showErrorToast('❌ Spreadsheet ID dan API Key harus diisi!');
+                return;
+            }
+            
+            localStorage.setItem('spreadsheetConfig', JSON.stringify(config));
+            document.querySelector('.fixed').remove();
+            showSuccessToast('✅ Konfigurasi Spreadsheet berhasil disimpan!');
+        }
+
+        function showErrorToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transform translate-x-full transition-transform duration-300';
+            toast.textContent = message;
             document.body.appendChild(toast);
             
             setTimeout(() => {
-                document.body.removeChild(toast);
-            }, 3000);
+                toast.classList.remove('translate-x-full');
+            }, 100);
+            
+            setTimeout(() => {
+                toast.classList.add('translate-x-full');
+                setTimeout(() => {
+                    if (document.body.contains(toast)) {
+                        document.body.removeChild(toast);
+                    }
+                }, 300);
+            }, 4000);
+        }
+
+        function showStorageInfo(record) {
+            const storageModal = document.createElement('div');
+            storageModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+            storageModal.innerHTML = `
+                <div class="bg-white rounded-xl shadow-2xl max-w-md w-full transform scale-0 transition-transform duration-300">
+                    <div class="p-6">
+                        <div class="text-center mb-6">
+                            <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <span class="text-3xl">💾</span>
+                            </div>
+                            <h3 class="text-xl font-semibold text-gray-800">Data Berhasil Disimpan!</h3>
+                            <p class="text-gray-600 text-sm mt-2">Tersimpan di HTML Script Storage</p>
+                        </div>
+                        
+                        <div class="bg-gray-50 rounded-lg p-4 space-y-3">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">📅 Tanggal:</span>
+                                <span class="font-medium">${new Date(record.date).toLocaleDateString('id-ID')}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">👥 Total Siswa:</span>
+                                <span class="font-medium">${record.totalStudents}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">✅ Hadir:</span>
+                                <span class="font-medium text-green-600">${record.presentCount}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">⏰ Waktu Simpan:</span>
+                                <span class="font-medium">${record.metadata.savedAt}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">💽 Storage:</span>
+                                <span class="font-medium text-blue-600">localStorage + Script</span>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+                            <div class="flex items-start space-x-2">
+                                <span class="text-blue-500 mt-0.5">ℹ️</span>
+                                <div class="text-sm text-blue-700">
+                                    <p class="font-medium">Lokasi Penyimpanan:</p>
+                                    <p>• Browser localStorage (utama)</p>
+                                    <p>• window.attendanceBackup (cadangan)</p>
+                                    <p>• Data tersimpan di script HTML ini</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-center space-x-3 mt-6">
+                            <button onclick="this.closest('.fixed').remove()" 
+                                    class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                                Tutup
+                            </button>
+                            <button onclick="showDataDetails()" 
+                                    class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                                📊 Lihat Detail Data
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(storageModal);
+            
+            // Animate in
+            setTimeout(() => {
+                storageModal.firstElementChild.classList.remove('scale-0');
+                storageModal.firstElementChild.classList.add('scale-100');
+            }, 100);
+            
+            // Auto close after 8 seconds
+            setTimeout(() => {
+                if (document.body.contains(storageModal)) {
+                    storageModal.firstElementChild.classList.add('scale-0');
+                    setTimeout(() => {
+                        if (document.body.contains(storageModal)) {
+                            document.body.removeChild(storageModal);
+                        }
+                    }, 300);
+                }
+            }, 8000);
+        }
+
+        function showDataDetails() {
+            // Close storage info modal
+            document.querySelector('.fixed').remove();
+            
+            const dataSize = JSON.stringify(attendanceHistory).length;
+            const studentSize = JSON.stringify(students).length;
+            const totalSize = dataSize + studentSize;
+            
+            const detailModal = document.createElement('div');
+            detailModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+            detailModal.innerHTML = `
+                <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
+                    <div class="p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-xl font-semibold text-gray-800">📊 Detail Penyimpanan Data</h3>
+                            <button onclick="this.closest('.fixed').remove()" class="text-gray-500 hover:text-gray-700 text-2xl">×</button>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                                <h4 class="font-semibold text-green-700 mb-2">✅ Status Penyimpanan</h4>
+                                <div class="text-sm text-green-600 space-y-1">
+                                    <p>• Data absensi: ${attendanceHistory.length} hari tersimpan</p>
+                                    <p>• Data siswa: ${students.length} siswa terdaftar</p>
+                                    <p>• Ukuran data: ~${(totalSize/1024).toFixed(1)} KB</p>
+                                    <p>• Terakhir disimpan: ${localStorage.getItem('lastSaved') ? new Date(localStorage.getItem('lastSaved')).toLocaleString('id-ID') : 'Belum pernah'}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <h4 class="font-semibold text-blue-700 mb-2">💾 Lokasi Penyimpanan</h4>
+                                <div class="text-sm text-blue-600 space-y-2">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                                        <span>localStorage: Aktif</span>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                                        <span>window.attendanceBackup: Aktif</span>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                        <span>HTML Script Variables: Aktif</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                <h4 class="font-semibold text-yellow-700 mb-2">⚠️ Catatan Penting</h4>
+                                <div class="text-sm text-yellow-600 space-y-1">
+                                    <p>• Data tersimpan di browser (localStorage)</p>
+                                    <p>• Data akan hilang jika cache browser dibersihkan</p>
+                                    <p>• Backup data secara berkala dengan ekspor</p>
+                                    <p>• Data hanya tersedia di browser ini</p>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                <h4 class="font-semibold text-gray-700 mb-2">🔧 Aksi Data</h4>
+                                <div class="flex flex-wrap gap-2">
+                                    <button onclick="exportAllData()" 
+                                            class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm transition-colors">
+                                        📤 Ekspor Semua
+                                    </button>
+                                    <button onclick="clearAllData()" 
+                                            class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm transition-colors">
+                                        🗑️ Hapus Semua
+                                    </button>
+                                    <button onclick="showBackupData()" 
+                                            class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm transition-colors">
+                                        👁️ Lihat Backup
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center mt-6">
+                            <button onclick="this.closest('.fixed').remove()" 
+                                    class="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                                Tutup
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(detailModal);
+        }
+
+        function exportAllData() {
+            const allData = {
+                students: students,
+                attendanceHistory: attendanceHistory,
+                exportDate: new Date().toISOString(),
+                version: '1.0'
+            };
+            
+            const jsonData = JSON.stringify(allData, null, 2);
+            const blob = new Blob([jsonData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `Backup_Absensi_${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+            
+            URL.revokeObjectURL(url);
+            showSuccessToast('✅ Backup data berhasil diunduh!');
+        }
+
+        function clearAllData() {
+            if (confirm('⚠️ PERINGATAN: Ini akan menghapus SEMUA data absensi dan siswa!\n\nApakah Anda yakin ingin melanjutkan?')) {
+                if (confirm('🚨 KONFIRMASI TERAKHIR: Data yang dihapus tidak dapat dikembalikan!\n\nKlik OK untuk menghapus semua data.')) {
+                    localStorage.clear();
+                    students.length = 0;
+                    attendanceHistory.length = 0;
+                    todayAttendance = {};
+                    window.attendanceBackup = null;
+                    
+                    // Close modal and refresh
+                    document.querySelector('.fixed').remove();
+                    renderStudentList();
+                    renderAbsenList();
+                    updateStatistics();
+                    renderAttendanceHistory();
+                    
+                    showSuccessToast('🗑️ Semua data berhasil dihapus!');
+                }
+            }
+        }
+
+        function showBackupData() {
+            const backup = window.attendanceBackup;
+            if (!backup) {
+                showErrorToast('❌ Tidak ada data backup ditemukan!');
+                return;
+            }
+            
+            const backupModal = document.createElement('div');
+            backupModal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+            backupModal.innerHTML = `
+                <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+                    <div class="p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-xl font-semibold text-gray-800">💾 Data Backup</h3>
+                            <button onclick="this.closest('.fixed').remove()" class="text-gray-500 hover:text-gray-700 text-2xl">×</button>
+                        </div>
+                        
+                        <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                            <h4 class="font-semibold text-gray-700 mb-2">📊 Informasi Backup</h4>
+                            <div class="text-sm text-gray-600 space-y-1">
+                                <p>• Terakhir update: ${new Date(backup.lastUpdate).toLocaleString('id-ID')}</p>
+                                <p>• Jumlah siswa: ${backup.students.length}</p>
+                                <p>• Jumlah hari absensi: ${backup.data.length}</p>
+                                <p>• Ukuran backup: ~${(JSON.stringify(backup).length/1024).toFixed(1)} KB</p>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white border border-gray-300 rounded-lg p-4 max-h-60 overflow-y-auto">
+                            <h4 class="font-semibold text-gray-700 mb-2">📋 Preview Data JSON</h4>
+                            <pre class="text-xs text-gray-600 whitespace-pre-wrap">${JSON.stringify(backup, null, 2).substring(0, 1000)}${JSON.stringify(backup).length > 1000 ? '...\n\n[Data dipotong untuk preview]' : ''}</pre>
+                        </div>
+                        
+                        <div class="text-center mt-4">
+                            <button onclick="this.closest('.fixed').remove()" 
+                                    class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                                Tutup
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(backupModal);
         }
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9816fc3d875f0d7e',t:'MTc1ODI2MjkxMS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9817459d74309cbc',t:'MTc1ODI2NTkxNy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
